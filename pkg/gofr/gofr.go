@@ -675,3 +675,11 @@ func (a *App) AddStaticFiles(endpoint, filePath string) {
 
 	a.httpServer.router.AddStaticFiles(endpoint, filePath)
 }
+
+// RegisterGraphQLSchema registers a GraphQL schema with the App.
+func (a *App) RegisterGraphQLSchema(schemaString string, resolvers interface{}) error {
+	if a.httpServer == nil {
+		return fmt.Errorf("HTTP server is not initialized")
+	}
+	return a.httpServer.RegisterGraphQLSchema(schemaString, resolvers)
+}

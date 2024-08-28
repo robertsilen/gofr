@@ -15,10 +15,11 @@ import (
 )
 
 type httpServer struct {
-	router *gofrHTTP.Router
-	port   int
-	ws     *websocket.Manager
-	srv    *http.Server
+	router         *gofrHTTP.Router
+	port           int
+	ws             *websocket.Manager
+	srv            *http.Server
+	graphQLHandler *GraphQLHandler
 }
 
 func newHTTPServer(c *container.Container, port int, middlewareConfigs map[string]string) *httpServer {
@@ -34,9 +35,10 @@ func newHTTPServer(c *container.Container, port int, middlewareConfigs map[strin
 	)
 
 	return &httpServer{
-		router: r,
-		port:   port,
-		ws:     wsManager,
+		router:         r,
+		port:           port,
+		ws:             wsManager,
+		graphQLHandler: &GraphQLHandler{},
 	}
 }
 

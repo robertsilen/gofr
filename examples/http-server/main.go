@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"sync"
 	"time"
 
@@ -13,6 +14,14 @@ import (
 	"gofr.dev/pkg/gofr"
 	"gofr.dev/pkg/gofr/datasource"
 )
+
+// Define a struct to hold the resolver methods
+type Resolver struct{}
+
+// Implement resolver methods for your schema
+func (r *Resolver) Hello() string {
+	return "Hello, world!"
+}
 
 func main() {
 	// Create a new application
@@ -27,6 +36,19 @@ func main() {
 	a.GET("/redis", RedisHandler)
 	a.GET("/trace", TraceHandler)
 	a.GET("/mysql", MysqlHandler)
+
+	// Register the GraphQL schema
+	schemaString := `
+		type Query {
+			hello: String!
+		}
+	`
+
+	resolver := &Resolver{}
+
+	if err := a.RegisterGraphQLSchema(schemaString, resolver); err != nil {
+		log.Fatalf("Failed to register GraphQL schema: %v", err)
+	}
 
 	// Run the application
 	a.Run()
