@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/graph-gophers/graphql-go"
+	"gofr.dev/pkg/gofr/container"
 	"log"
 	"net/http"
 	"strings"
@@ -13,10 +14,13 @@ type GraphQLHandler struct {
 	Schema *graphql.Schema
 }
 
-func (s *httpServer) RegisterGraphQLSchema(schemaString string, resolver interface{}) error {
+func (s *httpServer) RegisterGraphQLSchema(schemaString string, resolverFactory func(*container.Container) interface{},
+	c *container.Container) error {
 	if s.graphQLHandler != nil && s.graphQLHandler.Schema != nil {
 		return fmt.Errorf("GraphQL schema is already registered")
 	}
+
+	resolver := resolverFactory(c)
 
 	schema, err := graphql.ParseSchema(schemaString, resolver)
 	if err != nil {
