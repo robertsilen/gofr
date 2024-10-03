@@ -1,10 +1,13 @@
 package logging
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"time"
 
 	"golang.org/x/term"
@@ -12,7 +15,10 @@ import (
 	"gofr.dev/pkg/gofr/version"
 )
 
-const fileMode = 0644
+const (
+	fileMode      = 0644
+	maxBufferSize = 64 * 1024 //64kB
+)
 
 type PrettyPrint interface {
 	PrettyPrint(writer io.Writer)
@@ -35,14 +41,17 @@ type Logger interface {
 	Fatal(args ...interface{})
 	Fatalf(format string, args ...interface{})
 	ChangeLevel(level Level)
+	ShutDown()
 }
 
 type logger struct {
 	level      Level
-	normalOut  io.Writer
-	errorOut   io.Writer
+	out        io.Writer
+	writer     *bufio.Writer
+	ticker     *time.Ticker
 	isTerminal bool
-	lock       chan struct{}
+	lock       *sync.Mutex
+	done       chan struct{}
 }
 
 type logEntry struct {
@@ -50,38 +59,6 @@ type logEntry struct {
 	Time        time.Time   `json:"time"`
 	Message     interface{} `json:"message"`
 	GofrVersion string      `json:"gofrVersion"`
-}
-
-func (l *logger) logf(level Level, format string, args ...interface{}) {
-	if level < l.level {
-		return
-	}
-
-	out := l.normalOut
-	if level >= ERROR {
-		out = l.errorOut
-	}
-
-	entry := logEntry{
-		Level:       level,
-		Time:        time.Now(),
-		GofrVersion: version.Framework,
-	}
-
-	switch {
-	case len(args) == 1 && format == "":
-		entry.Message = args[0]
-	case len(args) != 1 && format == "":
-		entry.Message = args
-	case format != "":
-		entry.Message = fmt.Sprintf(format+"", args...) // TODO - this is stupid. We should not need empty string.
-	}
-
-	if l.isTerminal {
-		l.prettyPrint(entry, out)
-	} else {
-		_ = json.NewEncoder(out).Encode(entry)
-	}
 }
 
 func (l *logger) Debug(args ...interface{}) {
@@ -146,51 +123,108 @@ func (l *logger) Fatalf(format string, args ...interface{}) {
 	os.Exit(1)
 }
 
-func (l *logger) prettyPrint(e logEntry, out io.Writer) {
+func (l *logger) ShutDown() {
+	l.ticker.Stop()
+	l.done <- struct{}{}
+}
+
+func (l *logger) logf(level Level, format string, args ...interface{}) {
+	if level < l.level {
+		return
+	}
+
+	entry := logEntry{
+		Level:       level,
+		Time:        time.Now(),
+		GofrVersion: version.Framework,
+	}
+
+	switch {
+	case len(args) == 1 && format == "":
+		entry.Message = args[0]
+	case len(args) != 1 && format == "":
+		entry.Message = args
+	default:
+		entry.Message = fmt.Sprintf(format, args...)
+	}
+
+	var bs []byte
+
+	if l.isTerminal {
+		bs = l.prettyPrint(entry)
+	} else {
+		bs, _ = json.Marshal(entry)
+	}
+
+	if len(bs) > l.writer.Available() && l.writer.Buffered() > 0 {
+		if err := l.writer.Flush(); err != nil {
+			// TODO: handle cases when the flush does not work
+		}
+	}
+
+	l.writer.Write(bs)
+}
+
+func (l *logger) prettyPrint(e logEntry) []byte {
+	out := &bytes.Buffer{}
 	// Note: we need to lock the pretty print as printing to stdandard output not concurency safe
 	// the logs when printed in go routines were getting missaligned since we are achieveing
 	// a single line of log, in 2 separate statements which caused the missalignment.
-	l.lock <- struct{}{} // Acquire the channel's lock
-	defer func() {
-		<-l.lock // Release the channel's token
-	}()
+	l.lock.Lock()
+	defer l.lock.Unlock()
 
 	// Pretty printing if the message interface defines a method PrettyPrint else print the log message
 	// This decouples the logger implementation from its usage
 	if fn, ok := e.Message.(PrettyPrint); ok {
-		fmt.Fprintf(out, "\u001B[38;5;%dm%s\u001B[0m [%s] ", e.Level.color(), e.Level.String()[0:4],
-			e.Time.Format("15:04:05"))
+		out.WriteString(fmt.Sprintf("\u001B[38;5;%dm%s\u001B[0m [%s] ", e.Level.color(), e.Level.String()[0:4],
+			e.Time.Format("15:04:05")))
 
 		fn.PrettyPrint(out)
 	} else {
-		fmt.Fprintf(out, "\u001B[38;5;%dm%s\u001B[0m [%s] ", e.Level.color(), e.Level.String()[0:4],
-			e.Time.Format("15:04:05"))
-
-		fmt.Fprintf(out, "%v\n", e.Message)
+		out.WriteString(fmt.Sprintf("\u001B[38;5;%dm%s\u001B[0m [%s] %v\n", e.Level.color(), e.Level.String()[0:4],
+			e.Time.Format("15:04:05"), e.Message))
 	}
+
+	return out.Bytes()
+}
+
+func (l *logger) startFlushLoop() {
+	defer close(l.done)
+
+	for {
+		select {
+		case <-l.ticker.C:
+			_ = l.flush()
+		case <-l.done:
+			return
+		}
+	}
+}
+
+func (l *logger) flush() error {
+	return l.writer.Flush()
 }
 
 // NewLogger creates a new logger instance with the specified logging level.
 func NewLogger(level Level) Logger {
 	l := &logger{
-		normalOut: os.Stdout,
-		errorOut:  os.Stderr,
-		lock:      make(chan struct{}, 1),
+		writer: bufio.NewWriterSize(os.Stdout, maxBufferSize),
+		ticker: time.NewTicker(1 * time.Second),
+		lock:   new(sync.Mutex),
+		done:   make(chan struct{}),
 	}
 
 	l.level = level
+	l.isTerminal = checkIfTerminal(os.Stdout)
 
-	l.isTerminal = checkIfTerminal(l.normalOut)
+	go l.startFlushLoop()
 
 	return l
 }
 
 // NewFileLogger creates a new logger instance with logging to a file.
 func NewFileLogger(path string) Logger {
-	l := &logger{
-		normalOut: io.Discard,
-		errorOut:  io.Discard,
-	}
+	l := &logger{out: io.Discard}
 
 	if path == "" {
 		return l
@@ -201,8 +235,7 @@ func NewFileLogger(path string) Logger {
 		return l
 	}
 
-	l.normalOut = f
-	l.errorOut = f
+	l.out = f
 
 	return l
 }

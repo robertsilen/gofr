@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"bytes"
 	"os"
 	"testing"
 
@@ -98,9 +99,9 @@ func TestGetLevelFromString(t *testing.T) {
 func Test_changeLevel(t *testing.T) {
 	l := logger{
 		level:      INFO,
-		normalOut:  os.Stdout,
-		errorOut:   os.Stderr,
+		out:        os.Stdout,
 		isTerminal: false,
+		writer:     new(bytes.Buffer),
 	}
 
 	l.ChangeLevel(ERROR)

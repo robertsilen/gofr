@@ -12,6 +12,9 @@ type MockLogger struct {
 	errOut io.Writer
 }
 
+func (m *MockLogger) ShutDown() {
+}
+
 func NewMockLogger(level Level) Logger {
 	return &MockLogger{
 		level:  level,

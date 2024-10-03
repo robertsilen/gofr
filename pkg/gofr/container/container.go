@@ -151,6 +151,9 @@ func (c *Container) Close() error {
 		err = errors.Join(err, c.PubSub.Close())
 	}
 
+	// Close the logger and stop all logging
+	c.Logger.ShutDown()
+
 	return err
 }
 
