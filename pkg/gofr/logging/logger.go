@@ -17,7 +17,7 @@ import (
 
 const (
 	fileMode      = 0644
-	maxBufferSize = 64 * 1024 //64kB
+	maxBufferSize = 256 * 1024 //64kB
 )
 
 type PrettyPrint interface {
@@ -166,14 +166,15 @@ func (l *logger) logf(level Level, format string, args ...interface{}) {
 }
 
 func (l *logger) prettyPrint(e logEntry) []byte {
-	out := &bytes.Buffer{}
 	// Note: we need to lock the pretty print as printing to stdandard output not concurency safe
 	// the logs when printed in go routines were getting missaligned since we are achieveing
-	// a single line of log, in 2 separate statements which caused the missalignment.
+	// a single line of print, in 2 separate statements which caused the missalignment.
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
-	// Pretty printing if the message interface defines a method PrettyPrint else print the log message
+	out := &bytes.Buffer{}
+
+	// Pretty printing if the message interface defines a method PrettyPrint else print the print message
 	// This decouples the logger implementation from its usage
 	if fn, ok := e.Message.(PrettyPrint); ok {
 		out.WriteString(fmt.Sprintf("\u001B[38;5;%dm%s\u001B[0m [%s] ", e.Level.color(), e.Level.String()[0:4],
