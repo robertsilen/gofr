@@ -166,7 +166,7 @@ func (l *logger) logf(level Level, format string, args ...interface{}) {
 	l.rwlock.RLock()
 	defer l.rwlock.RUnlock()
 
-	l.writer.Write(bs)
+	fmt.Fprintf(l.writer, "%s", bs)
 }
 
 func (l *logger) prettyPrint(e logEntry) []byte {
@@ -211,7 +211,12 @@ func (l *logger) flush() error {
 	l.rwlock.RLock()
 	defer l.rwlock.RUnlock()
 
-	return l.writer.Flush()
+	err := l.writer.Flush()
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	return err
 }
 
 // NewLogger creates a new logger instance with the specified logging level.
