@@ -51,6 +51,7 @@ type logger struct {
 	ticker     *time.Ticker
 	isTerminal bool
 	lock       *sync.Mutex
+	rwlock     *sync.RWMutex
 	done       chan struct{}
 }
 
@@ -157,10 +158,13 @@ func (l *logger) logf(level Level, format string, args ...interface{}) {
 	}
 
 	if len(bs) > l.writer.Available() && l.writer.Buffered() > 0 {
-		if err := l.writer.Flush(); err != nil {
+		if err := l.flush(); err != nil {
 			// TODO: handle cases when the flush does not work
 		}
 	}
+
+	l.rwlock.RLock()
+	defer l.rwlock.RUnlock()
 
 	l.writer.Write(bs)
 }
@@ -197,12 +201,16 @@ func (l *logger) startFlushLoop() {
 		case <-l.ticker.C:
 			_ = l.flush()
 		case <-l.done:
+			_ = l.flush()
 			return
 		}
 	}
 }
 
 func (l *logger) flush() error {
+	l.rwlock.RLock()
+	defer l.rwlock.RUnlock()
+
 	return l.writer.Flush()
 }
 
@@ -210,8 +218,9 @@ func (l *logger) flush() error {
 func NewLogger(level Level) Logger {
 	l := &logger{
 		writer: bufio.NewWriterSize(os.Stdout, maxBufferSize),
-		ticker: time.NewTicker(1 * time.Second),
+		ticker: time.NewTicker(5 * time.Second),
 		lock:   new(sync.Mutex),
+		rwlock: new(sync.RWMutex),
 		done:   make(chan struct{}),
 	}
 

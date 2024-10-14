@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -219,13 +220,13 @@ func (m *mockLog) PrettyPrint(writer io.Writer) {
 func TestPrettyPrint(t *testing.T) {
 	m := &mockLog{msg: "mock test log"}
 	out := &bytes.Buffer{}
-	l := &logger{isTerminal: true, lock: make(chan struct{}, 1)}
+	l := &logger{isTerminal: true, lock: new(sync.Mutex), rwlock: new(sync.RWMutex)}
 
 	// case PrettyPrint is implemented
 	l.prettyPrint(logEntry{
 		Level:   INFO,
 		Message: m,
-	}, out)
+	})
 
 	outputLog := out.String()
 	expOut := []string{"INFO", "[00:00:00]", "TEST mock test log"}
@@ -240,7 +241,7 @@ func TestPrettyPrint(t *testing.T) {
 	l.prettyPrint(logEntry{
 		Level:   DEBUG,
 		Message: "test log for normal log",
-	}, out)
+	})
 
 	outputLog = out.String()
 	expOut = []string{"DEBU", "[00:00:00]", "test log for normal log"}

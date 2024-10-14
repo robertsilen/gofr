@@ -1,7 +1,7 @@
 package logging
 
 import (
-	"bytes"
+	"bufio"
 	"os"
 	"testing"
 
@@ -101,7 +101,7 @@ func Test_changeLevel(t *testing.T) {
 		level:      INFO,
 		out:        os.Stdout,
 		isTerminal: false,
-		writer:     new(bytes.Buffer),
+		writer:     new(bufio.Writer),
 	}
 
 	l.ChangeLevel(ERROR)
