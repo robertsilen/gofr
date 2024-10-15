@@ -158,9 +158,7 @@ func (l *logger) logf(level Level, format string, args ...interface{}) {
 	}
 
 	if len(bs) > l.writer.Available() && l.writer.Buffered() > 0 {
-		if err := l.flush(); err != nil {
-			// TODO: handle cases when the flush does not work
-		}
+		l.flush()
 	}
 
 	l.rwlock.RLock()
@@ -199,24 +197,25 @@ func (l *logger) startFlushLoop() {
 	for {
 		select {
 		case <-l.ticker.C:
-			_ = l.flush()
+			l.flush()
 		case <-l.done:
-			_ = l.flush()
+			l.flush()
 			return
 		}
 	}
 }
 
-func (l *logger) flush() error {
+func (l *logger) flush() {
 	l.rwlock.RLock()
 	defer l.rwlock.RUnlock()
 
 	err := l.writer.Flush()
 	if err != nil {
-		fmt.Println(err)
+		// reset the buffer when an error occurs
+		l.writer.Reset(os.Stdout)
 	}
 
-	return err
+	return
 }
 
 // NewLogger creates a new logger instance with the specified logging level.
