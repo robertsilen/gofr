@@ -43,6 +43,7 @@ func TestLogger_LevelInfo(t *testing.T) {
 	l.Log("log")
 	l.Error("error")
 
+	l.flush()
 	out := buf.String()
 
 	assert.NotContains(t, out, "debug")
@@ -63,6 +64,7 @@ func TestLogger_LevelError(t *testing.T) {
 	l.Log("log")
 	l.Error("error")
 
+	l.flush()
 	out := buf.String()
 
 	assert.NotContains(t, out, "debug")
@@ -83,6 +85,7 @@ func TestLogger_LevelDebug(t *testing.T) {
 	l.Log("log")
 	l.Error("error")
 
+	l.flush()
 	out := buf.String()
 
 	assert.Contains(t, out, "debug")
@@ -103,6 +106,7 @@ func TestLogger_LevelNotice(t *testing.T) {
 	l.Log("log")
 	l.Error("error")
 
+	l.flush()
 	out := buf.String()
 
 	assert.NotContains(t, out, "debug")
@@ -123,6 +127,7 @@ func TestLogger_LevelWarn(t *testing.T) {
 	l.Warn("warn")
 	l.Error("error")
 
+	l.flush()
 	out := buf.String()
 
 	assert.NotContains(t, out, "debug")

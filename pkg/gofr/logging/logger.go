@@ -46,7 +46,6 @@ type Logger interface {
 
 type logger struct {
 	level      Level
-	out        io.Writer
 	writer     *bufio.Writer
 	ticker     *time.Ticker
 	isTerminal bool
@@ -63,7 +62,7 @@ type logEntry struct {
 }
 
 func (l *logger) Debug(args ...interface{}) {
-	l.logf(DEBUG, "", args...)
+	l.log(DEBUG, args...)
 }
 
 func (l *logger) Debugf(format string, args ...interface{}) {
@@ -71,7 +70,7 @@ func (l *logger) Debugf(format string, args ...interface{}) {
 }
 
 func (l *logger) Info(args ...interface{}) {
-	l.logf(INFO, "", args...)
+	l.log(INFO, args...)
 }
 
 func (l *logger) Infof(format string, args ...interface{}) {
@@ -79,7 +78,7 @@ func (l *logger) Infof(format string, args ...interface{}) {
 }
 
 func (l *logger) Notice(args ...interface{}) {
-	l.logf(NOTICE, "", args...)
+	l.log(NOTICE, args...)
 }
 
 func (l *logger) Noticef(format string, args ...interface{}) {
@@ -87,7 +86,7 @@ func (l *logger) Noticef(format string, args ...interface{}) {
 }
 
 func (l *logger) Warn(args ...interface{}) {
-	l.logf(WARN, "", args...)
+	l.log(WARN, args...)
 }
 
 func (l *logger) Warnf(format string, args ...interface{}) {
@@ -95,7 +94,7 @@ func (l *logger) Warnf(format string, args ...interface{}) {
 }
 
 func (l *logger) Log(args ...interface{}) {
-	l.logf(INFO, "", args...)
+	l.log(INFO, args...)
 }
 
 func (l *logger) Logf(format string, args ...interface{}) {
@@ -103,7 +102,7 @@ func (l *logger) Logf(format string, args ...interface{}) {
 }
 
 func (l *logger) Error(args ...interface{}) {
-	l.logf(ERROR, "", args...)
+	l.log(ERROR, args...)
 }
 
 func (l *logger) Errorf(format string, args ...interface{}) {
@@ -111,7 +110,7 @@ func (l *logger) Errorf(format string, args ...interface{}) {
 }
 
 func (l *logger) Fatal(args ...interface{}) {
-	l.logf(FATAL, "", args...)
+	l.log(FATAL, args...)
 
 	//nolint:revive // exit status is 1 as it denotes failure as signified by Fatal log
 	os.Exit(1)
@@ -129,7 +128,7 @@ func (l *logger) ShutDown() {
 	l.done <- struct{}{}
 }
 
-func (l *logger) logf(level Level, format string, args ...interface{}) {
+func (l *logger) log(level Level, args ...interface{}) {
 	if level < l.level {
 		return
 	}
@@ -141,13 +140,42 @@ func (l *logger) logf(level Level, format string, args ...interface{}) {
 	}
 
 	switch {
-	case len(args) == 1 && format == "":
+	case len(args) == 1:
 		entry.Message = args[0]
-	case len(args) != 1 && format == "":
+	case len(args) != 1:
 		entry.Message = args
-	default:
-		entry.Message = fmt.Sprintf(format, args...)
 	}
+
+	var bs []byte
+
+	if l.isTerminal {
+		bs = l.prettyPrint(entry)
+	} else {
+		bs, _ = json.Marshal(entry)
+	}
+
+	if len(bs) > l.writer.Available() && l.writer.Buffered() > 0 {
+		l.flush()
+	}
+
+	l.rwlock.RLock()
+	defer l.rwlock.RUnlock()
+
+	fmt.Fprintf(l.writer, "%s", bs)
+}
+
+func (l *logger) logf(level Level, format string, args ...interface{}) {
+	if level < l.level {
+		return
+	}
+
+	entry := logEntry{
+		Level:       level,
+		Time:        time.Now(),
+		GofrVersion: version.Framework,
+	}
+
+	entry.Message = fmt.Sprintf(format, args...)
 
 	var bs []byte
 
@@ -238,7 +266,13 @@ func NewLogger(level Level) Logger {
 
 // NewFileLogger creates a new logger instance with logging to a file.
 func NewFileLogger(path string) Logger {
-	l := &logger{out: io.Discard}
+	l := &logger{
+		writer: bufio.NewWriter(io.Discard),
+		ticker: time.NewTicker(1 * time.Second),
+		lock:   new(sync.Mutex),
+		rwlock: new(sync.RWMutex),
+		done:   make(chan struct{}),
+	}
 
 	if path == "" {
 		return l
@@ -249,7 +283,7 @@ func NewFileLogger(path string) Logger {
 		return l
 	}
 
-	l.out = f
+	l.writer = bufio.NewWriterSize(f, maxBufferSize)
 
 	return l
 }

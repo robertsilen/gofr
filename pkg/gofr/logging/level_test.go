@@ -2,7 +2,6 @@ package logging
 
 import (
 	"bufio"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -98,8 +97,8 @@ func TestGetLevelFromString(t *testing.T) {
 
 func Test_changeLevel(t *testing.T) {
 	l := logger{
-		level:      INFO,
-		out:        os.Stdout,
+		level: INFO,
+		//out:        os.Stdout,
 		isTerminal: false,
 		writer:     new(bufio.Writer),
 	}
