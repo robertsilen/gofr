@@ -25,7 +25,7 @@ func getLogger(t *testing.T, level Level) (*logger, *bytes.Buffer) {
 		writer: bufio.NewWriterSize(buf, maxBufferSize),
 		ticker: time.NewTicker(1 * time.Microsecond),
 		lock:   new(sync.Mutex),
-		rwlock: new(sync.RWMutex),
+		rwLock: new(sync.Mutex),
 		done:   make(chan struct{}),
 		level:  level,
 	}
@@ -241,7 +241,7 @@ func (m *mockLog) PrettyPrint(writer io.Writer) {
 func TestPrettyPrint(t *testing.T) {
 	m := &mockLog{msg: "mock test log"}
 	out := &bytes.Buffer{}
-	l := &logger{isTerminal: true, lock: new(sync.Mutex), rwlock: new(sync.RWMutex)}
+	l := &logger{isTerminal: true, lock: new(sync.Mutex), rwLock: new(sync.Mutex)}
 
 	// case PrettyPrint is implemented
 	l.prettyPrint(logEntry{
@@ -271,3 +271,23 @@ func TestPrettyPrint(t *testing.T) {
 		assert.Contains(t, outputLog, v)
 	}
 }
+
+func BenchmarkLogger(b *testing.B) {
+	lg := NewLogger(DEBUG)
+
+	b.SetParallelism(100)
+	// Set the number of parallel goroutines to use
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			lg.Infof("my new log")
+			// Uncomment as needed for other log levels
+			// lg.Info("my info log")
+			// lg.Debug("my debug log")
+			// lg.Error("my error log")
+			// lg.Notice("my notice log")
+			// lg.Warn("my warn log")
+		}
+	})
+}
+
+// 1000000             10236 ns/op             240 B/op          8 allocs/op

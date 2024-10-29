@@ -20,37 +20,14 @@ const (
 	maxBufferSize = 256 * 1024 //64kB
 )
 
-type PrettyPrint interface {
-	PrettyPrint(writer io.Writer)
-}
-
-// Logger represents a logging interface.
-type Logger interface {
-	Debug(args ...interface{})
-	Debugf(format string, args ...interface{})
-	Log(args ...interface{})
-	Logf(format string, args ...interface{})
-	Info(args ...interface{})
-	Infof(format string, args ...interface{})
-	Notice(args ...interface{})
-	Noticef(format string, args ...interface{})
-	Warn(args ...interface{})
-	Warnf(format string, args ...interface{})
-	Error(args ...interface{})
-	Errorf(format string, args ...interface{})
-	Fatal(args ...interface{})
-	Fatalf(format string, args ...interface{})
-	ChangeLevel(level Level)
-	ShutDown()
-}
-
 type logger struct {
 	level      Level
 	writer     *bufio.Writer
 	ticker     *time.Ticker
 	isTerminal bool
 	lock       *sync.Mutex
-	rwlock     *sync.RWMutex
+	rwLock     *sync.Mutex
+	flushNow   chan struct{}
 	done       chan struct{}
 }
 
@@ -155,11 +132,11 @@ func (l *logger) log(level Level, args ...interface{}) {
 	}
 
 	if len(bs) > l.writer.Available() && l.writer.Buffered() > 0 {
-		l.flush()
+		l.flushNow <- struct{}{}
 	}
 
-	l.rwlock.RLock()
-	defer l.rwlock.RUnlock()
+	l.rwLock.Lock()
+	defer l.rwLock.Unlock()
 
 	fmt.Fprintf(l.writer, "%s", bs)
 }
@@ -185,12 +162,14 @@ func (l *logger) logf(level Level, format string, args ...interface{}) {
 		bs, _ = json.Marshal(entry)
 	}
 
-	if len(bs) > l.writer.Available() && l.writer.Buffered() > 0 {
-		l.flush()
-	}
+	l.rwLock.Lock()
+	defer l.rwLock.Unlock()
 
-	l.rwlock.RLock()
-	defer l.rwlock.RUnlock()
+	if len(bs) > l.writer.Available() && l.writer.Buffered() > 0 {
+		l.rwLock.Unlock()
+		l.flushNow <- struct{}{}
+		l.rwLock.Lock()
+	}
 
 	fmt.Fprintf(l.writer, "%s", bs)
 }
@@ -226,6 +205,8 @@ func (l *logger) startFlushLoop() {
 		select {
 		case <-l.ticker.C:
 			l.flush()
+		case <-l.flushNow:
+			l.flush()
 		case <-l.done:
 			l.flush()
 			return
@@ -234,8 +215,8 @@ func (l *logger) startFlushLoop() {
 }
 
 func (l *logger) flush() {
-	l.rwlock.RLock()
-	defer l.rwlock.RUnlock()
+	l.rwLock.Lock()
+	defer l.rwLock.Unlock()
 
 	err := l.writer.Flush()
 	if err != nil {
@@ -249,11 +230,12 @@ func (l *logger) flush() {
 // NewLogger creates a new logger instance with the specified logging level.
 func NewLogger(level Level) Logger {
 	l := &logger{
-		writer: bufio.NewWriterSize(os.Stdout, maxBufferSize),
-		ticker: time.NewTicker(5 * time.Second),
-		lock:   new(sync.Mutex),
-		rwlock: new(sync.RWMutex),
-		done:   make(chan struct{}),
+		writer:   bufio.NewWriterSize(os.Stdout, maxBufferSize),
+		ticker:   time.NewTicker(5 * time.Second),
+		lock:     new(sync.Mutex),
+		rwLock:   new(sync.Mutex),
+		done:     make(chan struct{}),
+		flushNow: make(chan struct{}),
 	}
 
 	l.level = level
@@ -270,7 +252,7 @@ func NewFileLogger(path string) Logger {
 		writer: bufio.NewWriter(io.Discard),
 		ticker: time.NewTicker(1 * time.Second),
 		lock:   new(sync.Mutex),
-		rwlock: new(sync.RWMutex),
+		rwLock: new(sync.Mutex),
 		done:   make(chan struct{}),
 	}
 
