@@ -131,12 +131,12 @@ func (l *logger) log(level Level, args ...interface{}) {
 		bs, _ = json.Marshal(entry)
 	}
 
-	if len(bs) > l.writer.Available() && l.writer.Buffered() > 0 {
-		l.flushNow <- struct{}{}
-	}
-
-	l.lock.Lock()
-	defer l.lock.Unlock()
+	//if len(bs) > l.writer.Available() && l.writer.Buffered() > 0 {
+	//	l.flushNow <- struct{}{}
+	//}
+	//
+	//l.lock.Lock()
+	//defer l.lock.Unlock()
 
 	l.logChan <- bs
 
@@ -164,16 +164,18 @@ func (l *logger) logf(level Level, format string, args ...interface{}) {
 		bs, _ = json.Marshal(entry)
 	}
 
-	l.lock.Lock()
-	defer l.lock.Unlock()
+	//l.lock.Lock()
+	//defer l.lock.Unlock()
 
-	if len(bs) > l.writer.Available() && l.writer.Buffered() > 0 {
-		l.lock.Unlock()
-		l.flushNow <- struct{}{}
-		l.lock.Lock()
-	}
+	//if len(bs) > l.writer.Available() && l.writer.Buffered() > 0 {
+	//	l.lock.Unlock()
+	//	l.flushNow <- struct{}{}
+	//	l.lock.Lock()
+	//}
 
-	fmt.Fprintf(l.writer, "%s", bs)
+	l.logChan <- bs
+
+	//fmt.Fprintf(l.writer, "%s", bs)
 }
 
 func (l *logger) prettyPrint(e logEntry) []byte {
@@ -198,6 +200,25 @@ func (l *logger) prettyPrint(e logEntry) []byte {
 	}
 
 	return out.Bytes()
+}
+
+func (l *logger) sendLogToBuffer() {
+	for {
+		select {
+		case bs, ok := <-l.logChan: // Read from the log channel
+			if !ok {
+				return // Channel closed, exit the loop
+			}
+
+			l.lock.Lock()
+			if len(bs) > l.writer.Available() && l.writer.Buffered() > 0 {
+				l.flushNow <- struct{}{}
+			}
+
+			fmt.Fprintf(l.writer, "%s", bs)
+			l.lock.Unlock()
+		}
+	}
 }
 
 func (l *logger) startFlushLoop() {
@@ -237,13 +258,15 @@ func NewLogger(level Level) Logger {
 		lock:     new(sync.Mutex),
 		done:     make(chan struct{}),
 		flushNow: make(chan struct{}),
-		logChan:  make(chan []byte, 1024),
+		logChan:  make(chan []byte),
 	}
 
 	l.level = level
 	l.isTerminal = checkIfTerminal(os.Stdout)
 
 	go l.startFlushLoop()
+
+	go l.sendLogToBuffer()
 
 	return l
 }
