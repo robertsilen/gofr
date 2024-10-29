@@ -25,7 +25,6 @@ func getLogger(t *testing.T, level Level) (*logger, *bytes.Buffer) {
 		writer: bufio.NewWriterSize(buf, maxBufferSize),
 		ticker: time.NewTicker(1 * time.Microsecond),
 		lock:   new(sync.Mutex),
-		rwLock: new(sync.Mutex),
 		done:   make(chan struct{}),
 		level:  level,
 	}
@@ -241,7 +240,7 @@ func (m *mockLog) PrettyPrint(writer io.Writer) {
 func TestPrettyPrint(t *testing.T) {
 	m := &mockLog{msg: "mock test log"}
 	out := &bytes.Buffer{}
-	l := &logger{isTerminal: true, lock: new(sync.Mutex), rwLock: new(sync.Mutex)}
+	l := &logger{isTerminal: true, lock: new(sync.Mutex)}
 
 	// case PrettyPrint is implemented
 	l.prettyPrint(logEntry{

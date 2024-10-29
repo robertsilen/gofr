@@ -26,9 +26,9 @@ type logger struct {
 	ticker     *time.Ticker
 	isTerminal bool
 	lock       *sync.Mutex
-	rwLock     *sync.Mutex
 	flushNow   chan struct{}
 	done       chan struct{}
+	logChan    chan []byte
 }
 
 type logEntry struct {
@@ -135,10 +135,12 @@ func (l *logger) log(level Level, args ...interface{}) {
 		l.flushNow <- struct{}{}
 	}
 
-	l.rwLock.Lock()
-	defer l.rwLock.Unlock()
+	l.lock.Lock()
+	defer l.lock.Unlock()
 
-	fmt.Fprintf(l.writer, "%s", bs)
+	l.logChan <- bs
+
+	//fmt.Fprintf(l.writer, "%s", bs)
 }
 
 func (l *logger) logf(level Level, format string, args ...interface{}) {
@@ -162,13 +164,13 @@ func (l *logger) logf(level Level, format string, args ...interface{}) {
 		bs, _ = json.Marshal(entry)
 	}
 
-	l.rwLock.Lock()
-	defer l.rwLock.Unlock()
+	l.lock.Lock()
+	defer l.lock.Unlock()
 
 	if len(bs) > l.writer.Available() && l.writer.Buffered() > 0 {
-		l.rwLock.Unlock()
+		l.lock.Unlock()
 		l.flushNow <- struct{}{}
-		l.rwLock.Lock()
+		l.lock.Lock()
 	}
 
 	fmt.Fprintf(l.writer, "%s", bs)
@@ -178,8 +180,8 @@ func (l *logger) prettyPrint(e logEntry) []byte {
 	// Note: we need to lock the pretty print as printing to stdandard output not concurency safe
 	// the logs when printed in go routines were getting missaligned since we are achieveing
 	// a single line of print, in 2 separate statements which caused the missalignment.
-	l.lock.Lock()
-	defer l.lock.Unlock()
+	//l.lock.Lock()
+	//defer l.lock.Unlock()
 
 	out := &bytes.Buffer{}
 
@@ -215,8 +217,8 @@ func (l *logger) startFlushLoop() {
 }
 
 func (l *logger) flush() {
-	l.rwLock.Lock()
-	defer l.rwLock.Unlock()
+	l.lock.Lock()
+	defer l.lock.Unlock()
 
 	err := l.writer.Flush()
 	if err != nil {
@@ -233,9 +235,9 @@ func NewLogger(level Level) Logger {
 		writer:   bufio.NewWriterSize(os.Stdout, maxBufferSize),
 		ticker:   time.NewTicker(5 * time.Second),
 		lock:     new(sync.Mutex),
-		rwLock:   new(sync.Mutex),
 		done:     make(chan struct{}),
 		flushNow: make(chan struct{}),
+		logChan:  make(chan []byte, 1024),
 	}
 
 	l.level = level
@@ -252,7 +254,6 @@ func NewFileLogger(path string) Logger {
 		writer: bufio.NewWriter(io.Discard),
 		ticker: time.NewTicker(1 * time.Second),
 		lock:   new(sync.Mutex),
-		rwLock: new(sync.Mutex),
 		done:   make(chan struct{}),
 	}
 
