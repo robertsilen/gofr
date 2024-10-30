@@ -22,11 +22,11 @@ func getLogger(t *testing.T, level Level) (*logger, *bytes.Buffer) {
 
 	buf := &bytes.Buffer{}
 	l := &logger{
-		writer: bufio.NewWriterSize(buf, maxBufferSize),
-		ticker: time.NewTicker(1 * time.Microsecond),
-		lock:   new(sync.Mutex),
-		done:   make(chan struct{}),
-		level:  level,
+		stdWriter: bufio.NewWriterSize(buf, maxBufferSize),
+		ticker:    time.NewTicker(1 * time.Microsecond),
+		lock:      new(sync.Mutex),
+		done:      make(chan struct{}),
+		level:     level,
 	}
 
 	return l, buf
@@ -271,22 +271,12 @@ func TestPrettyPrint(t *testing.T) {
 	}
 }
 
-func BenchmarkLogger(b *testing.B) {
+func Benchmark_NewLogger(b *testing.B) {
 	lg := NewLogger(DEBUG)
 
-	b.SetParallelism(100)
-	// Set the number of parallel goroutines to use
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			lg.Infof("my new log")
-			// Uncomment as needed for other log levels
-			// lg.Info("my info log")
-			// lg.Debug("my debug log")
-			// lg.Error("my error log")
-			// lg.Notice("my notice log")
-			// lg.Warn("my warn log")
+			lg.Info("New Log")
 		}
 	})
 }
-
-// 1000000             10236 ns/op             240 B/op          8 allocs/op

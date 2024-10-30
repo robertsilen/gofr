@@ -22,7 +22,8 @@ const (
 
 type logger struct {
 	level      Level
-	writer     *bufio.Writer
+	stdWriter  *bufio.Writer
+	errWriter  *bufio.Writer
 	ticker     *time.Ticker
 	isTerminal bool
 	lock       *sync.Mutex
@@ -131,16 +132,7 @@ func (l *logger) log(level Level, args ...interface{}) {
 		bs, _ = json.Marshal(entry)
 	}
 
-	//if len(bs) > l.writer.Available() && l.writer.Buffered() > 0 {
-	//	l.flushNow <- struct{}{}
-	//}
-	//
-	//l.lock.Lock()
-	//defer l.lock.Unlock()
-
 	l.logChan <- bs
-
-	//fmt.Fprintf(l.writer, "%s", bs)
 }
 
 func (l *logger) logf(level Level, format string, args ...interface{}) {
@@ -164,27 +156,10 @@ func (l *logger) logf(level Level, format string, args ...interface{}) {
 		bs, _ = json.Marshal(entry)
 	}
 
-	//l.lock.Lock()
-	//defer l.lock.Unlock()
-
-	//if len(bs) > l.writer.Available() && l.writer.Buffered() > 0 {
-	//	l.lock.Unlock()
-	//	l.flushNow <- struct{}{}
-	//	l.lock.Lock()
-	//}
-
 	l.logChan <- bs
-
-	//fmt.Fprintf(l.writer, "%s", bs)
 }
 
 func (l *logger) prettyPrint(e logEntry) []byte {
-	// Note: we need to lock the pretty print as printing to stdandard output not concurency safe
-	// the logs when printed in go routines were getting missaligned since we are achieveing
-	// a single line of print, in 2 separate statements which caused the missalignment.
-	//l.lock.Lock()
-	//defer l.lock.Unlock()
-
 	out := &bytes.Buffer{}
 
 	// Pretty printing if the message interface defines a method PrettyPrint else print the print message
@@ -211,11 +186,11 @@ func (l *logger) sendLogToBuffer() {
 			}
 
 			l.lock.Lock()
-			if len(bs) > l.writer.Available() && l.writer.Buffered() > 0 {
+			if len(bs) > l.stdWriter.Available() && l.stdWriter.Buffered() > 0 {
 				l.flushNow <- struct{}{}
 			}
 
-			fmt.Fprintf(l.writer, "%s", bs)
+			fmt.Fprintf(l.stdWriter, "%s", bs)
 			l.lock.Unlock()
 		}
 	}
@@ -241,10 +216,10 @@ func (l *logger) flush() {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
-	err := l.writer.Flush()
+	err := l.stdWriter.Flush()
 	if err != nil {
 		// reset the buffer when an error occurs
-		l.writer.Reset(os.Stdout)
+		l.stdWriter.Reset(os.Stdout)
 	}
 
 	return
@@ -253,12 +228,12 @@ func (l *logger) flush() {
 // NewLogger creates a new logger instance with the specified logging level.
 func NewLogger(level Level) Logger {
 	l := &logger{
-		writer:   bufio.NewWriterSize(os.Stdout, maxBufferSize),
-		ticker:   time.NewTicker(5 * time.Second),
-		lock:     new(sync.Mutex),
-		done:     make(chan struct{}),
-		flushNow: make(chan struct{}),
-		logChan:  make(chan []byte),
+		stdWriter: bufio.NewWriterSize(os.Stdout, maxBufferSize),
+		ticker:    time.NewTicker(5 * time.Second),
+		lock:      new(sync.Mutex),
+		done:      make(chan struct{}),
+		flushNow:  make(chan struct{}),
+		logChan:   make(chan []byte),
 	}
 
 	l.level = level
@@ -274,10 +249,10 @@ func NewLogger(level Level) Logger {
 // NewFileLogger creates a new logger instance with logging to a file.
 func NewFileLogger(path string) Logger {
 	l := &logger{
-		writer: bufio.NewWriter(io.Discard),
-		ticker: time.NewTicker(1 * time.Second),
-		lock:   new(sync.Mutex),
-		done:   make(chan struct{}),
+		stdWriter: bufio.NewWriter(io.Discard),
+		ticker:    time.NewTicker(1 * time.Second),
+		lock:      new(sync.Mutex),
+		done:      make(chan struct{}),
 	}
 
 	if path == "" {
@@ -289,7 +264,7 @@ func NewFileLogger(path string) Logger {
 		return l
 	}
 
-	l.writer = bufio.NewWriterSize(f, maxBufferSize)
+	l.stdWriter = bufio.NewWriterSize(f, maxBufferSize)
 
 	return l
 }

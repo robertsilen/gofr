@@ -100,7 +100,7 @@ func Test_changeLevel(t *testing.T) {
 		level: INFO,
 		//out:        os.Stdout,
 		isTerminal: false,
-		writer:     new(bufio.Writer),
+		stdWriter:  new(bufio.Writer),
 	}
 
 	l.ChangeLevel(ERROR)
