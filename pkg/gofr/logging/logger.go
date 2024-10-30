@@ -233,7 +233,7 @@ func NewLogger(level Level) Logger {
 		lock:      new(sync.Mutex),
 		done:      make(chan struct{}),
 		flushNow:  make(chan struct{}),
-		logChan:   make(chan []byte),
+		logChan:   make(chan []byte, 10),
 	}
 
 	l.level = level
