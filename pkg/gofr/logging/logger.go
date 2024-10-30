@@ -186,7 +186,7 @@ func (l *logger) sendLogToBuffer() {
 			}
 
 			l.lock.Lock()
-			if len(bs) > l.stdWriter.Available() && l.stdWriter.Buffered() > 0 {
+			if len(bs) > l.stdWriter.Available() {
 				l.flushNow <- struct{}{}
 			}
 
@@ -233,7 +233,7 @@ func NewLogger(level Level) Logger {
 		lock:      new(sync.Mutex),
 		done:      make(chan struct{}),
 		flushNow:  make(chan struct{}),
-		logChan:   make(chan []byte, 10),
+		logChan:   make(chan []byte),
 	}
 
 	l.level = level
