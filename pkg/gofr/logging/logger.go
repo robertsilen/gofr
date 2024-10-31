@@ -20,6 +20,30 @@ const (
 	maxBufferSize = 256 * 1024 //64kB
 )
 
+type PrettyPrint interface {
+	PrettyPrint(writer io.Writer)
+}
+
+// Logger represents a logging interface.
+type Logger interface {
+	Debug(args ...interface{})
+	Debugf(format string, args ...interface{})
+	Log(args ...interface{})
+	Logf(format string, args ...interface{})
+	Info(args ...interface{})
+	Infof(format string, args ...interface{})
+	Notice(args ...interface{})
+	Noticef(format string, args ...interface{})
+	Warn(args ...interface{})
+	Warnf(format string, args ...interface{})
+	Error(args ...interface{})
+	Errorf(format string, args ...interface{})
+	Fatal(args ...interface{})
+	Fatalf(format string, args ...interface{})
+	ChangeLevel(level Level)
+	ShutDown()
+}
+
 type logger struct {
 	level      Level
 	stdWriter  *bufio.Writer
@@ -40,7 +64,7 @@ type logEntry struct {
 }
 
 func (l *logger) Debug(args ...interface{}) {
-	l.log(DEBUG, args...)
+	l.logf(DEBUG, "", args...)
 }
 
 func (l *logger) Debugf(format string, args ...interface{}) {
@@ -48,7 +72,7 @@ func (l *logger) Debugf(format string, args ...interface{}) {
 }
 
 func (l *logger) Info(args ...interface{}) {
-	l.log(INFO, args...)
+	l.logf(INFO, "", args...)
 }
 
 func (l *logger) Infof(format string, args ...interface{}) {
@@ -56,7 +80,7 @@ func (l *logger) Infof(format string, args ...interface{}) {
 }
 
 func (l *logger) Notice(args ...interface{}) {
-	l.log(NOTICE, args...)
+	l.logf(NOTICE, "", args...)
 }
 
 func (l *logger) Noticef(format string, args ...interface{}) {
@@ -64,7 +88,7 @@ func (l *logger) Noticef(format string, args ...interface{}) {
 }
 
 func (l *logger) Warn(args ...interface{}) {
-	l.log(WARN, args...)
+	l.logf(WARN, "", args...)
 }
 
 func (l *logger) Warnf(format string, args ...interface{}) {
@@ -72,7 +96,7 @@ func (l *logger) Warnf(format string, args ...interface{}) {
 }
 
 func (l *logger) Log(args ...interface{}) {
-	l.log(INFO, args...)
+	l.logf(INFO, "", args...)
 }
 
 func (l *logger) Logf(format string, args ...interface{}) {
@@ -80,7 +104,7 @@ func (l *logger) Logf(format string, args ...interface{}) {
 }
 
 func (l *logger) Error(args ...interface{}) {
-	l.log(ERROR, args...)
+	l.logf(ERROR, "", args...)
 }
 
 func (l *logger) Errorf(format string, args ...interface{}) {
@@ -88,7 +112,7 @@ func (l *logger) Errorf(format string, args ...interface{}) {
 }
 
 func (l *logger) Fatal(args ...interface{}) {
-	l.log(FATAL, args...)
+	l.logf(FATAL, "", args...)
 
 	//nolint:revive // exit status is 1 as it denotes failure as signified by Fatal log
 	os.Exit(1)
@@ -106,35 +130,6 @@ func (l *logger) ShutDown() {
 	l.done <- struct{}{}
 }
 
-func (l *logger) log(level Level, args ...interface{}) {
-	if level < l.level {
-		return
-	}
-
-	entry := logEntry{
-		Level:       level,
-		Time:        time.Now(),
-		GofrVersion: version.Framework,
-	}
-
-	switch {
-	case len(args) == 1:
-		entry.Message = args[0]
-	case len(args) != 1:
-		entry.Message = args
-	}
-
-	var bs []byte
-
-	if l.isTerminal {
-		bs = l.prettyPrint(entry)
-	} else {
-		bs, _ = json.Marshal(entry)
-	}
-
-	l.logChan <- bs
-}
-
 func (l *logger) logf(level Level, format string, args ...interface{}) {
 	if level < l.level {
 		return
@@ -146,7 +141,14 @@ func (l *logger) logf(level Level, format string, args ...interface{}) {
 		GofrVersion: version.Framework,
 	}
 
-	entry.Message = fmt.Sprintf(format, args...)
+	switch {
+	case len(args) == 1 && format == "":
+		entry.Message = args[0]
+	case len(args) != 1 && format == "":
+		entry.Message = args
+	case format != "":
+		entry.Message = fmt.Sprintf(format, args...) // TODO - this is stupid. We should not need empty string.
+	}
 
 	var bs []byte
 
@@ -229,6 +231,7 @@ func (l *logger) flush() {
 func NewLogger(level Level) Logger {
 	l := &logger{
 		stdWriter: bufio.NewWriterSize(os.Stdout, maxBufferSize),
+		errWriter: bufio.NewWriterSize(os.Stderr, maxBufferSize),
 		ticker:    time.NewTicker(5 * time.Second),
 		lock:      new(sync.Mutex),
 		done:      make(chan struct{}),
